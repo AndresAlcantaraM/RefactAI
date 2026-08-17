@@ -1,4 +1,4 @@
-module aprendizaje-gemini
+module refactai
 
 go 1.26.5
 
