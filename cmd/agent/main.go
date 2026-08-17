@@ -2,18 +2,17 @@ package main
 
 import (
 	"context"
-	"fmt"
 	"log"
+	"refactai/internal/agent"
 	"refactai/internal/config"
 	"refactai/internal/llm"
 	"refactai/internal/prompt"
+	"refactai/internal/workspace"
 )
 
 func main() {
 	ctx := context.Background()
 	cfg, err := config.Load()
-
-	builder := prompt.NewBuilder()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -23,25 +22,22 @@ func main() {
 		log.Fatal(err)
 	}
 
+	promptBuilder := prompt.NewBuilder()
+
+	refactAgent := agent.New(
+		gemini,
+		promptBuilder,
+	)
+
 	task := "Generate a Go program that calculates the factorial of a number recursively."
 
-	planPrompt := builder.BuildPlan(task)
-
-	plan, err := gemini.Generate(ctx, planPrompt)
+	result, err := refactAgent.Run(ctx, task)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	log.Printf("PLAN:\n%s\n", plan)
-
-	codePrompt := builder.BuildCode(task, plan)
-
-	code, err := gemini.Generate(ctx, codePrompt)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Printf("CODE:\n%s\n", code)
+	log.Printf("PLAN:\n %v\n", result.Plan)
+	log.Printf("CODE:\n %s\n", result.Code)
 
 	/*
 		exec := executor.New(".")
@@ -56,4 +52,28 @@ func main() {
 		log.Printf("stderr:\n%s", result.Stderr)
 		log.Printf("exit code:\n%d", result.ExitCode)
 	*/
+
+	workspace, err := workspace.New("./tmp-workspace")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = workspace.WriteFile("main.go", []byte("package main\n\nfunc main() {}\n"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	content, err := workspace.ReadFile("main.go")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Println(string(content))
+
+	files, err := workspace.ListFiles()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	log.Printf("LOS ARCHIVOS SON:\n%s", files)
 }
