@@ -5,6 +5,7 @@ import (
 	"log"
 	"refactai/internal/agent"
 	"refactai/internal/config"
+	"refactai/internal/executor"
 	"refactai/internal/llm"
 	"refactai/internal/prompt"
 	"refactai/internal/workspace"
@@ -12,6 +13,7 @@ import (
 
 func main() {
 	ctx := context.Background()
+
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatal(err)
@@ -24,56 +26,33 @@ func main() {
 
 	promptBuilder := prompt.NewBuilder()
 
+	ws, err := workspace.New("./tmp-workspace")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	exec, err := executor.New(ws)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	refactAgent := agent.New(
 		gemini,
 		promptBuilder,
+		exec,
 	)
 
-	task := "Generate a Go program that calculates the factorial of a number recursively."
+	task := "Generate a Go program that prints Hello World!"
 
 	result, err := refactAgent.Run(ctx, task)
+
+	log.Printf("PLAN:\n%s\n", result.Plan)
+	log.Printf("CODE:\n%s\n", result.Code)
+	log.Printf("STDOUT:\n%s\n", result.Execution.Stdout)
+	log.Printf("STDERR:\n%s\n", result.Execution.Stderr)
+	log.Printf("EXIT CODE: %d\n", result.Execution.ExitCode)
+
 	if err != nil {
-		log.Fatal(err)
+		log.Printf("Agent execution failed: %v", err)
 	}
-
-	log.Printf("PLAN:\n %v\n", result.Plan)
-	log.Printf("CODE:\n %s\n", result.Code)
-
-	/*
-		exec := executor.New(".")
-
-		result, err := exec.Run(ctx, "go", "test", "../../workspace")
-
-		if err != nil {
-			log.Printf("Command failed: %v", err)
-		}
-
-		log.Printf("stdout:\n%s", result.Stdout)
-		log.Printf("stderr:\n%s", result.Stderr)
-		log.Printf("exit code:\n%d", result.ExitCode)
-	*/
-
-	workspace, err := workspace.New("./tmp-workspace")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	err = workspace.WriteFile("main.go", []byte("package main\n\nfunc main() {}\n"))
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	content, err := workspace.ReadFile("main.go")
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	log.Println(string(content))
-
-	files, err := workspace.ListFiles()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	log.Printf("LOS ARCHIVOS SON:\n%s", files)
 }
