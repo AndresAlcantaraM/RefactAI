@@ -124,7 +124,7 @@ func (w *Workspace) ResolvePath(path string) (string, error) {
 	}
 
 	if relativePath == ".." || len(relativePath) >= 3 && relativePath[:3] == ".."+string(os.PathSeparator) {
-		return "", fmt.Errorf("path espaces workspace: %s", path)
+		return "", fmt.Errorf("path escapes workspace: %s", path)
 	}
 
 	return fullPath, nil
