@@ -4,6 +4,7 @@ import (
 	"context"
 	"log"
 	"refactai/internal/agent"
+	"refactai/internal/analyzer"
 	"refactai/internal/config"
 	"refactai/internal/executor"
 	"refactai/internal/llm"
@@ -31,6 +32,11 @@ func main() {
 		log.Fatal(err)
 	}
 
+	analyzerClient, err := analyzer.New(ws)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	exec, err := executor.New(ws)
 	if err != nil {
 		log.Fatal(err)
@@ -39,10 +45,12 @@ func main() {
 	refactAgent := agent.New(
 		gemini,
 		promptBuilder,
+		analyzerClient,
 		exec,
+		ws,
 	)
 
-	task := "Generate a Go program that prints Hello World!"
+	task := "Rename the hello function to greet and update its usage."
 
 	log.Printf("TASK:\n%s\n", task)
 

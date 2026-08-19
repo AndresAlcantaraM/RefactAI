@@ -79,7 +79,7 @@ func (a *Analyzer) analyzeFile(path string) ([]Finding, error) {
 			return true
 		}
 
-		findings = append(findings, a.checkFunctionLenght(path, fset, function))
+		findings = append(findings, a.checkFunctionLength(path, fset, function))
 
 		findings = append(findings, a.checkParameters(path, fset, function))
 
@@ -89,7 +89,7 @@ func (a *Analyzer) analyzeFile(path string) ([]Finding, error) {
 	return a.filterEmptyFindings(findings), nil
 }
 
-func (a *Analyzer) checkFunctionLenght(path string, fset *token.FileSet, function *ast.FuncDecl) Finding {
+func (a *Analyzer) checkFunctionLength(path string, fset *token.FileSet, function *ast.FuncDecl) Finding {
 	start := fset.Position(function.Pos())
 	end := fset.Position(function.End())
 

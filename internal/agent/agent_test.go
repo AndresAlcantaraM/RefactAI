@@ -3,9 +3,11 @@ package agent
 import (
 	"context"
 	"errors"
+	"refactai/internal/analyzer"
 	"refactai/internal/executor"
 	"refactai/internal/prompt"
 	"refactai/internal/workspace"
+	"strings"
 	"testing"
 )
 
@@ -13,6 +15,7 @@ type fakeLLM struct {
 	responses []string
 	errors    []error
 	calls     int
+	prompts   []string
 }
 
 func (f *fakeLLM) Generate(ctx context.Context, prompt string) (string, error) {
@@ -27,6 +30,8 @@ func (f *fakeLLM) Generate(ctx context.Context, prompt string) (string, error) {
 		return "", errors.New("unexpected LLM call")
 	}
 
+	f.prompts = append(f.prompts, prompt)
+
 	return f.responses[call], nil
 }
 
@@ -38,6 +43,11 @@ func newTestAgent(t *testing.T, llm LLM) *Agent {
 		t.Fatalf("failed to create workspace: %v", err)
 	}
 
+	analyzerClient, err := analyzer.New(ws)
+	if err != nil {
+		t.Fatalf("failed to create analyzer: %v", err)
+	}
+
 	exec, err := executor.New(ws)
 	if err != nil {
 		t.Fatalf("failed to create executor: %v", err)
@@ -46,7 +56,9 @@ func newTestAgent(t *testing.T, llm LLM) *Agent {
 	return New(
 		llm,
 		prompt.NewBuilder(),
+		analyzerClient,
 		exec,
+		ws,
 	)
 }
 
@@ -176,5 +188,84 @@ func main() {
 
 	if llm.calls != 4 {
 		t.Fatalf("expected 4 LLM calls, got %d", llm.calls)
+	}
+}
+
+func TestRunUsesAnalyzerFindings(t *testing.T) {
+	ws, err := workspace.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+
+	err = ws.WriteFile("main.go", []byte(`
+		package main
+
+		func main() {
+			println("hello")
+		}
+
+		func tooLong() {
+			println("1")
+			println("2")
+			println("3")
+			println("4")
+			println("5")
+			println("6")
+			println("7")
+			println("8")
+			println("9")
+			println("10")
+			println("11")
+		}
+		`))
+
+	if err != nil {
+		t.Fatalf("failed to write Go file: %v", err)
+	}
+
+	llm := &fakeLLM{
+		responses: []string{
+			"Refactor the tooLong function.",
+			`package main
+
+			import "fmt"
+
+			func main() {
+				fmt.Println("refactored")
+			}`,
+		},
+	}
+
+	analyzerClient, err := analyzer.New(ws)
+	if err != nil {
+		t.Fatalf("failed to create analyzer: %v", err)
+	}
+
+	exec, err := executor.New(ws)
+	if err != nil {
+		t.Fatalf("failed to create executor: %v", err)
+	}
+
+	agent := New(llm, prompt.NewBuilder(), analyzerClient, exec, ws)
+
+	result, err := agent.Run(context.Background(), "Improve maintainability of this repository.")
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if result.Plan == "" {
+		t.Fatalf("expected plan")
+	}
+
+	if result.Execution.ExitCode != 0 {
+		t.Fatalf("expected execution code 0, got %d", result.Execution.ExitCode)
+	}
+
+	if !strings.Contains(llm.prompts[0], "function_too_long") {
+		t.Fatal("expected plan prompt to contain analyzer finding")
+	}
+
+	if !strings.Contains(llm.prompts[0], "main.go") {
+		t.Fatal("expected plan prompt to contain analyzed file")
 	}
 }

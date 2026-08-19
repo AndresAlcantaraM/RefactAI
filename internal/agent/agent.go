@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"refactai/internal/action"
+	"refactai/internal/analyzer"
 	"refactai/internal/executor"
 	"refactai/internal/prompt"
+	"refactai/internal/workspace"
 )
 
 const maxAttempts = 3
@@ -15,9 +17,11 @@ type LLM interface {
 }
 
 type Agent struct {
-	llm      LLM
-	prompts  *prompt.Builder
-	executor *executor.Executor
+	llm       LLM
+	prompts   *prompt.Builder
+	analyzer  *analyzer.Analyzer
+	executor  *executor.Executor
+	workspace *workspace.Workspace
 }
 
 type Result struct {
@@ -27,11 +31,14 @@ type Result struct {
 	Execution executor.Result
 }
 
-func New(llmClient LLM, promptBuilder *prompt.Builder, executorClient *executor.Executor) *Agent {
+func New(llmClient LLM, promptBuilder *prompt.Builder, analyzerClient *analyzer.Analyzer, executorClient *executor.Executor,
+	workspace *workspace.Workspace) *Agent {
 	return &Agent{
-		llm:      llmClient,
-		prompts:  promptBuilder,
-		executor: executorClient,
+		llm:       llmClient,
+		prompts:   promptBuilder,
+		analyzer:  analyzerClient,
+		executor:  executorClient,
+		workspace: workspace,
 	}
 }
 
@@ -40,14 +47,24 @@ func (a *Agent) Run(ctx context.Context, task string) (Result, error) {
 		return Result{}, fmt.Errorf("task cannot be empty")
 	}
 
-	planPrompt := a.prompts.BuildPlan(task)
+	files, err := a.workspace.ListFiles()
+	if err != nil {
+		return Result{}, fmt.Errorf("failed to list workspace files: %v", err)
+	}
+
+	findings, err := a.analyzer.Analyze()
+	if err != nil {
+		return Result{}, fmt.Errorf("failed to analyze workspace: %w", err)
+	}
+
+	planPrompt := a.prompts.BuildPlan(task, findings, files)
 
 	plan, err := a.llm.Generate(ctx, planPrompt)
 	if err != nil {
 		return Result{}, fmt.Errorf("failed to generate plan: %w", err)
 	}
 
-	codePrompt := a.prompts.BuildCode(task, plan)
+	codePrompt := a.prompts.BuildCode(task, plan, findings, files)
 
 	code, err := a.llm.Generate(ctx, codePrompt)
 	if err != nil {
