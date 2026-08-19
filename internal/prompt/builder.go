@@ -3,6 +3,8 @@ package prompt
 import (
 	"fmt"
 	"refactai/internal/analyzer"
+	"refactai/internal/executor"
+	"refactai/internal/validator"
 	"strings"
 )
 
@@ -83,21 +85,28 @@ func (b *Builder) BuildCode(task, plan string, findings []analyzer.Finding, file
 		`, task, plan, formatFindings(findings), formatFiles(files))
 }
 
-func (b *Builder) BuildFeedbackAction(task, plan, previousCode, stdout, stderr string, exitCode int) string {
+func (b *Builder) BuildFeedbackAction(task string, plan string, previousCode string, execution executor.Result,
+	validation validator.Result) string {
+
 	return fmt.Sprintf(`
 	You are an expert Go software engineer.
 
-	The previously generated Go program failed during execution.
-	Analyze the execution feedback and generate a corrected version.
+	The previously generated Go program did not produce an acceptable repository state.
+	Analyze the execution and validation feedback and generate a corrected version.
 
 	Rules:
 	- Use Go only.
 	- Start with package main.
 	- Preserve the original task and implementation plan.
-	- Fix the problem identified by the execution feedback.
+	- Fix the problem identified by the execution or validation feedback.
 	- Generate only the complete source code.
 	- Do not use Markdown code fences.
 	- Do not include explanations outside the source code.
+	- The program must modify the repository directly.
+	- Use relative paths from the workspace root.
+	- Do not modify files outside the workspace.
+	- Handle file operation errors explicitly.
+	- Make the smallest reasonable changes necessary to satisfy the task.
 
 	USER TASK:
 	%s
@@ -116,7 +125,30 @@ func (b *Builder) BuildFeedbackAction(task, plan, previousCode, stdout, stderr s
 
 	EXECUTION EXIT CODE:
 	%d
-	`, task, plan, previousCode, stdout, stderr, exitCode)
+
+	VALIDATION SKIPPED:
+	%t
+
+	VALIDATION STDOUT:
+	%s
+
+	VALIDATION STDERR:
+	%s
+
+	VALIDATION EXIT CODE:
+	%d
+	`,
+		task,
+		plan,
+		previousCode,
+		execution.Stdout,
+		execution.Stderr,
+		execution.ExitCode,
+		validation.Skipped,
+		validation.Stdout,
+		validation.Stderr,
+		validation.ExitCode,
+	)
 }
 
 func formatFindings(findings []analyzer.Finding) string {

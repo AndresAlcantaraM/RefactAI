@@ -3,15 +3,34 @@ package executor
 import (
 	"context"
 	"os"
-	"refactai/internal/action"
-	"refactai/internal/workspace"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
+
+	"refactai/internal/action"
+	"refactai/internal/workspace"
 )
 
+func newTestExecutor(t *testing.T) (*Executor, *workspace.Workspace) {
+	t.Helper()
+
+	ws, err := workspace.New(t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+
+	exec, err := New(ws)
+	if err != nil {
+		t.Fatalf("failed to create executor: %v", err)
+	}
+
+	return exec, ws
+}
+
 func TestNew(t *testing.T) {
-	ws, err := workspace.New(os.TempDir())
+	ws, err := workspace.New(t.TempDir())
 	if err != nil {
 		t.Fatalf("failed to create workspace: %v", err)
 	}
@@ -27,52 +46,38 @@ func TestNew(t *testing.T) {
 }
 
 func TestRun(t *testing.T) {
-	t.Run("executes action successfully", func(t *testing.T) {
-		ws, err := workspace.New(t.TempDir())
-		if err != nil {
-			t.Fatalf("failed to create workspace: %v", err)
-		}
+	t.Run("executes action successfully and cleans temporary files", func(t *testing.T) {
+		exec, ws := newTestExecutor(t)
 
-		executor, err := New(ws)
-		if err != nil {
-			t.Fatalf("failed to create executor: %v", err)
-		}
-
-		act := action.New(`
-		package main
+		code := `package main
 
 		import "fmt"
 
 		func main() {
-			fmt.Println("hello")
-		}
-		`)
+			fmt.Println("hello executor")
+		}`
 
-		result, err := executor.Run(context.Background(), act)
+		result, err := exec.Run(context.Background(), action.New(code))
 		if err != nil {
 			t.Fatalf("expected no error, got %v", err)
 		}
+
 		if result.ExitCode != 0 {
-			t.Fatalf("expected exit code 0, got %v", result.ExitCode)
+			t.Fatalf("expected exit code 0, got %d", result.ExitCode)
 		}
-		if !strings.Contains(result.Stdout, "hello") {
-			t.Fatalf("expected stdout to contain %q, got %q", "hello", result.Stdout)
+
+		if !strings.Contains(result.Stdout, "hello executor") {
+			t.Fatalf("expected stdout to contain %q, got %q", "hello executor", result.Stdout)
 		}
+
+		assertTemporaryFilesRemoved(t, ws)
 	})
 
-	t.Run("returns feedback when action fails", func(t *testing.T) {
-		ws, err := workspace.New(t.TempDir())
-		if err != nil {
-			t.Fatalf("failed to create workspace: %v", err)
-		}
+	// Agregado del Bloque 1: Prueba de fallo en tiempo de ejecución (exit code custom + stderr)
+	t.Run("returns feedback when action fails at runtime", func(t *testing.T) {
+		exec, ws := newTestExecutor(t)
 
-		executor, err := New(ws)
-		if err != nil {
-			t.Fatalf("failed to create executor: %v", err)
-		}
-
-		act := action.New(`
-		package main
+		code := `package main
 
 		import (
 			"fmt"
@@ -82,12 +87,11 @@ func TestRun(t *testing.T) {
 		func main() {
 			fmt.Fprintln(os.Stderr, "action failed")
 			os.Exit(42)
-		}
-		`)
+		}`
 
-		result, err := executor.Run(context.Background(), act)
+		result, err := exec.Run(context.Background(), action.New(code))
 		if err == nil {
-			t.Fatal("expected execution error")
+			t.Fatal("expected execution error, got nil")
 		}
 
 		if result.ExitCode != 42 {
@@ -97,103 +101,91 @@ func TestRun(t *testing.T) {
 		if !strings.Contains(result.Stderr, "action failed") {
 			t.Fatalf("expected stderr to contain %q, got %q", "action failed", result.Stderr)
 		}
+
+		assertTemporaryFilesRemoved(t, ws)
 	})
 
-	t.Run("returns feedback when action fails to build", func(t *testing.T) {
-		ws, err := workspace.New(t.TempDir())
-		if err != nil {
-			t.Fatalf("failed to create workspace: %v", err)
-		}
+	t.Run("returns build error and cleans action file", func(t *testing.T) {
+		exec, ws := newTestExecutor(t)
 
-		executor, err := New(ws)
-		if err != nil {
-			t.Fatalf("failed to create executor: %v", err)
-		}
-		act := action.New(`
-		package main
+		code := `package main
 
 		func main() {
-			this is invalid Go code
-		}
-		`)
+			thisDoesNotCompile()
+		}`
 
-		result, err := executor.Run(context.Background(), act)
-
+		result, err := exec.Run(context.Background(), action.New(code))
 		if err == nil {
-			t.Fatal("expected build error")
+			t.Fatal("expected error, got nil")
 		}
+
 		if result.ExitCode != -1 {
 			t.Fatalf("expected exit code -1, got %d", result.ExitCode)
 		}
-		if result.Stderr == "" {
-			t.Fatal("expected build feedback")
-		}
+
+		assertTemporaryFilesRemoved(t, ws)
 	})
 
 	t.Run("rejects nil action", func(t *testing.T) {
-		ws, err := workspace.New(t.TempDir())
-		if err != nil {
-			t.Fatalf("failed to create workspace: %v", err)
-		}
+		exec, _ := newTestExecutor(t)
 
-		executor, err := New(ws)
-		if err != nil {
-			t.Fatalf("failed to create executor: %v", err)
-		}
-
-		_, err = executor.Run(context.Background(), nil)
-
-		if err == nil {
-			t.Fatalf("expected error, got nil")
-		}
-	})
-
-	t.Run("rejects empty action code", func(t *testing.T) {
-		ws, err := workspace.New(t.TempDir())
-		if err != nil {
-			t.Fatalf("failed to create workspace: %v", err)
-		}
-
-		executor, err := New(ws)
-		if err != nil {
-			t.Fatalf("failed to create executor: %v", err)
-		}
-
-		_, err = executor.Run(context.Background(), action.New(""))
-
+		_, err := exec.Run(context.Background(), nil)
 		if err == nil {
 			t.Fatal("expected error, got nil")
 		}
 	})
 
-	t.Run("respects context timeout", func(t *testing.T) {
-		ws, err := workspace.New(t.TempDir())
-		if err != nil {
-			t.Fatalf("failed to create workspace: %v", err)
-		}
+	t.Run("rejects empty action", func(t *testing.T) {
+		exec, _ := newTestExecutor(t)
 
-		executor, err := New(ws)
-		if err != nil {
-			t.Fatalf("failed to create executor :%v", err)
-		}
-
-		act := action.New(`
-		package main
-
-		import "time"
-
-		func main() {
-			time.Sleep(10 * time.Second)
-		}
-		`)
-
-		ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-		defer cancel()
-
-		_, err = executor.Run(ctx, act)
-
+		_, err := exec.Run(context.Background(), action.New(""))
 		if err == nil {
-			t.Fatal("expected execution error, got nil")
+			t.Fatal("expected error, got nil")
 		}
 	})
+}
+
+func TestRunContextCancellation(t *testing.T) {
+	exec, ws := newTestExecutor(t)
+
+	code := `package main
+
+	import "time"
+
+	func main() {
+		time.Sleep(10 * time.Second)
+	}`
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+
+	result, err := exec.Run(ctx, action.New(code))
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if result.ExitCode != -1 {
+		t.Fatalf("expected exit code -1, got %d", result.ExitCode)
+	}
+
+	assertTemporaryFilesRemoved(t, ws)
+}
+
+func assertTemporaryFilesRemoved(t *testing.T, ws *workspace.Workspace) {
+	t.Helper()
+
+	actionPath := filepath.Join(ws.Root(), actionFileName)
+	if _, err := os.Stat(actionPath); !os.IsNotExist(err) {
+		t.Fatalf("expected %s to be removed, got err=%v", actionFileName, err)
+	}
+
+	binaryName := actionBinaryName
+	if runtime.GOOS == "windows" {
+		binaryName += ".exe"
+	}
+
+	binaryPath := filepath.Join(ws.Root(), binaryName)
+	if _, err := os.Stat(binaryPath); !os.IsNotExist(err) {
+		t.Fatalf("expected %s to be removed, got err=%v", binaryName, err)
+	}
 }

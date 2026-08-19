@@ -3,6 +3,7 @@ package workspace
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -190,11 +191,58 @@ func TestDeleteFile(t *testing.T) {
 		}
 	})
 
-	t.Run("returns error for nonexisting file", func(t *testing.T) {
+	t.Run("manages error for nonexisting file", func(t *testing.T) {
 		err := ws.DeleteFile("does-not-exist.txt")
 
+		if err != nil {
+			t.Fatal("expected no error, got %w", err)
+		}
+	})
+}
+
+func TestResolvePath(t *testing.T) {
+	ws, err := New(t.TempDir())
+	if err != nil {
+		t.Fatalf("failed to create workspace: %v", err)
+	}
+
+	t.Run("accepts valid relative path", func(t *testing.T) {
+		path, err := ws.ResolvePath("internal/app.go")
+		if err != nil {
+			t.Fatalf("expected no error, got %v", err)
+		}
+
+		if !strings.HasSuffix(filepath.ToSlash(path), "/internal/app.go") {
+			t.Fatalf("unexpected resolved path: %s", path)
+		}
+	})
+
+	t.Run("rejects absolute path", func(t *testing.T) {
+		var absolute string
+
+		if filepath.Separator == '\\' {
+			absolute = `C:\outside\file.txt`
+		} else {
+			absolute = "/outside/file.txt"
+		}
+
+		_, err := ws.ResolvePath(absolute)
 		if err == nil {
-			t.Fatal("expected error for nonexisting file")
+			t.Fatal("expected error, got nil")
+		}
+	})
+
+	t.Run("rejects path escaping workspace", func(t *testing.T) {
+		_, err := ws.ResolvePath("../outside.txt")
+		if err == nil {
+			t.Fatal("expected error, got nil")
+		}
+	})
+
+	t.Run("rejects empty path", func(t *testing.T) {
+		_, err := ws.ResolvePath("")
+		if err == nil {
+			t.Fatal("expected error, got nil")
 		}
 	})
 }

@@ -6,6 +6,7 @@ import (
 	"refactai/internal/analyzer"
 	"refactai/internal/executor"
 	"refactai/internal/prompt"
+	"refactai/internal/validator"
 	"refactai/internal/workspace"
 	"strings"
 	"testing"
@@ -43,6 +44,21 @@ func newTestAgent(t *testing.T, llm LLM) *Agent {
 		t.Fatalf("failed to create workspace: %v", err)
 	}
 
+	err = ws.WriteFile("go.mod", []byte(`module testproject
+go 1.23
+`))
+	if err != nil {
+		t.Fatalf("failed to create go.mod: %v", err)
+	}
+
+	err = ws.WriteFile("main.go", []byte(`package main
+
+func main() {}
+`))
+	if err != nil {
+		t.Fatalf("failed to create main.go: %v", err)
+	}
+
 	analyzerClient, err := analyzer.New(ws)
 	if err != nil {
 		t.Fatalf("failed to create analyzer: %v", err)
@@ -53,12 +69,18 @@ func newTestAgent(t *testing.T, llm LLM) *Agent {
 		t.Fatalf("failed to create executor: %v", err)
 	}
 
+	validatorClient, err := validator.New(ws)
+	if err != nil {
+		t.Fatalf("failed to create validator: %v", err)
+	}
+
 	return New(
 		llm,
 		prompt.NewBuilder(),
 		analyzerClient,
 		exec,
 		ws,
+		validatorClient,
 	)
 }
 
@@ -99,6 +121,15 @@ func TestRun(t *testing.T) {
 		if result.Execution.Stdout != "hello from agent\n" {
 			t.Fatalf("expected %q, got %q", "hello from agent\n", result.Execution.Stdout)
 		}
+
+		if result.Validation.Skipped {
+			t.Fatalf("expected validation to run")
+		}
+
+		if result.Validation.ExitCode != 0 {
+			t.Fatalf("expected validation exit code 0, got %d", result.Validation.ExitCode)
+		}
+
 		if llm.calls != 2 {
 			t.Fatalf("expected 2 LLM calls, got %d", llm.calls)
 		}
@@ -137,6 +168,57 @@ func TestRun(t *testing.T) {
 			t.Fatalf("expected no LLM calls, got %d", llm.calls)
 		}
 	})
+}
+
+func TestRunRetriesAfterValidationFailure(t *testing.T) {
+	llm := &fakeLLM{
+		responses: []string{
+			"Create a simple Go program.",
+			`package main
+
+func main() {
+	doesNotExist()
+}`,
+			`package main
+
+func main() {}`,
+		},
+	}
+
+	agent := newTestAgent(t, llm)
+
+	result, err := agent.Run(
+		context.Background(),
+		"Create a valid Go program.",
+	)
+
+	if err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	if result.Execution.ExitCode != 0 {
+		t.Fatalf("expected execution exit code 0, got %d", result.Execution.ExitCode)
+	}
+
+	if result.Validation.ExitCode != 0 {
+		t.Fatalf("expected final validation exit code 0, got %d", result.Validation.ExitCode)
+	}
+
+	if llm.calls != 3 {
+		t.Fatalf("expected 3 LLM calls, got %d", llm.calls)
+	}
+
+	if len(llm.prompts) != 3 {
+		t.Fatalf("expected 3 prompts, got %d", len(llm.prompts))
+	}
+
+	if !strings.Contains(llm.prompts[2], "VALIDATION EXIT CODE:") {
+		t.Fatal("expected corrective prompt to contain validation feedback")
+	}
+
+	if !strings.Contains(llm.prompts[2], "previously generated") {
+		t.Fatal("expected corrective prompt to contain failure context")
+	}
 }
 
 func TestRunStopsAfterMaxAttempts(t *testing.T) {
@@ -246,7 +328,12 @@ func TestRunUsesAnalyzerFindings(t *testing.T) {
 		t.Fatalf("failed to create executor: %v", err)
 	}
 
-	agent := New(llm, prompt.NewBuilder(), analyzerClient, exec, ws)
+	validatorClient, err := validator.New(ws)
+	if err != nil {
+		t.Fatalf("failed to create validator: %v", err)
+	}
+
+	agent := New(llm, prompt.NewBuilder(), analyzerClient, exec, ws, validatorClient)
 
 	result, err := agent.Run(context.Background(), "Improve maintainability of this repository.")
 	if err != nil {
@@ -259,6 +346,10 @@ func TestRunUsesAnalyzerFindings(t *testing.T) {
 
 	if result.Execution.ExitCode != 0 {
 		t.Fatalf("expected execution code 0, got %d", result.Execution.ExitCode)
+	}
+
+	if result.Validation.ExitCode != 0 {
+		t.Fatalf("expected validation exit code 0, got %d", result.Validation.ExitCode)
 	}
 
 	if !strings.Contains(llm.prompts[0], "function_too_long") {

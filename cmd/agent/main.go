@@ -9,6 +9,7 @@ import (
 	"refactai/internal/executor"
 	"refactai/internal/llm"
 	"refactai/internal/prompt"
+	"refactai/internal/validator"
 	"refactai/internal/workspace"
 )
 
@@ -42,12 +43,18 @@ func main() {
 		log.Fatal(err)
 	}
 
+	validatorClient, err := validator.New(ws)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	refactAgent := agent.New(
 		gemini,
 		promptBuilder,
 		analyzerClient,
 		exec,
 		ws,
+		validatorClient,
 	)
 
 	task := "Rename the hello function to greet and update its usage."
@@ -62,6 +69,10 @@ func main() {
 		log.Printf("STDOUT:\n%s\n", result.Execution.Stdout)
 		log.Printf("STDERR:\n%s\n", result.Execution.Stderr)
 		log.Printf("EXIT CODE: %d\n", result.Execution.ExitCode)
+		log.Printf("VALIDATION STDOUT:\n%s\n", result.Validation.Stdout)
+		log.Printf("VALIDATION STDERR:\n%s\n", result.Validation.Stderr)
+		log.Printf("VALIDATION EXIT CODE: %d\n", result.Validation.ExitCode)
+		log.Printf("VALIDATION SKIPPED: %t\n", result.Validation.Skipped)
 		return
 	}
 
@@ -70,4 +81,8 @@ func main() {
 	log.Printf("STDOUT:\n%s\n", result.Execution.Stdout)
 	log.Printf("STDERR:\n%s\n", result.Execution.Stderr)
 	log.Printf("EXIT CODE: %d\n", result.Execution.ExitCode)
+	log.Printf("VALIDATION STDOUT:\n%s\n", result.Validation.Stdout)
+	log.Printf("VALIDATION STDERR:\n%s\n", result.Validation.Stderr)
+	log.Printf("VALIDATION EXIT CODE: %d\n", result.Validation.ExitCode)
+	log.Printf("VALIDATION SKIPPED: %t\n", result.Validation.Skipped)
 }

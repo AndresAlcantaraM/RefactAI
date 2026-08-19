@@ -29,7 +29,7 @@ type Executor struct {
 
 func New(workspace *workspace.Workspace) (*Executor, error) {
 	if workspace == nil {
-		return nil, fmt.Errorf("workspace canno be nil")
+		return nil, fmt.Errorf("workspace cannot be nil")
 	}
 
 	return &Executor{
@@ -57,6 +57,10 @@ func (e *Executor) Run(ctx context.Context, act *action.Action) (Result, error) 
 	}
 
 	binaryPath := filepath.Join(e.workspace.Root(), binaryName)
+
+	defer func() {
+		_ = e.workspace.DeleteFile(actionFileName)
+	}()
 
 	defer func() {
 		_ = e.workspace.DeleteFile(binaryName)

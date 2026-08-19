@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -100,6 +101,10 @@ func (w *Workspace) DeleteFile(path string) error {
 	}
 
 	if err := os.Remove(fullPath); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+
 		return fmt.Errorf("failed to delete file: %w", err)
 	}
 
