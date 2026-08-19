@@ -44,15 +44,22 @@ func main() {
 
 	task := "Generate a Go program that prints Hello World!"
 
+	log.Printf("TASK:\n%s\n", task)
+
 	result, err := refactAgent.Run(ctx, task)
+	if err != nil {
+		log.Printf("Agent execution failed: %v", err)
+		log.Printf("PLAN:\n%s\n", result.Plan)
+		log.Printf("CODE:\n%s\n", result.Code)
+		log.Printf("STDOUT:\n%s\n", result.Execution.Stdout)
+		log.Printf("STDERR:\n%s\n", result.Execution.Stderr)
+		log.Printf("EXIT CODE: %d\n", result.Execution.ExitCode)
+		return
+	}
 
 	log.Printf("PLAN:\n%s\n", result.Plan)
 	log.Printf("CODE:\n%s\n", result.Code)
 	log.Printf("STDOUT:\n%s\n", result.Execution.Stdout)
 	log.Printf("STDERR:\n%s\n", result.Execution.Stderr)
 	log.Printf("EXIT CODE: %d\n", result.Execution.ExitCode)
-
-	if err != nil {
-		log.Printf("Agent execution failed: %v", err)
-	}
 }

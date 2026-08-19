@@ -90,12 +90,43 @@ func TestRun(t *testing.T) {
 			t.Fatal("expected execution error")
 		}
 
-		if result.ExitCode != 1 {
-			t.Fatalf("expected exit code 1, got %d", result.ExitCode)
+		if result.ExitCode != 42 {
+			t.Fatalf("expected exit code 42, got %d", result.ExitCode)
 		}
 
 		if !strings.Contains(result.Stderr, "action failed") {
 			t.Fatalf("expected stderr to contain %q, got %q", "action failed", result.Stderr)
+		}
+	})
+
+	t.Run("returns feedback when action fails to build", func(t *testing.T) {
+		ws, err := workspace.New(t.TempDir())
+		if err != nil {
+			t.Fatalf("failed to create workspace: %v", err)
+		}
+
+		executor, err := New(ws)
+		if err != nil {
+			t.Fatalf("failed to create executor: %v", err)
+		}
+		act := action.New(`
+		package main
+
+		func main() {
+			this is invalid Go code
+		}
+		`)
+
+		result, err := executor.Run(context.Background(), act)
+
+		if err == nil {
+			t.Fatal("expected build error")
+		}
+		if result.ExitCode != -1 {
+			t.Fatalf("expected exit code -1, got %d", result.ExitCode)
+		}
+		if result.Stderr == "" {
+			t.Fatal("expected build feedback")
 		}
 	})
 

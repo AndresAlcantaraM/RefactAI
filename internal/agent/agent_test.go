@@ -11,23 +11,23 @@ import (
 
 type fakeLLM struct {
 	responses []string
-	err       error
+	errors    []error
 	calls     int
 }
 
 func (f *fakeLLM) Generate(ctx context.Context, prompt string) (string, error) {
-	if f.err != nil {
-		return "", f.err
+	call := f.calls
+	f.calls++
+
+	if call < len(f.errors) && f.errors[call] != nil {
+		return "", f.errors[call]
 	}
 
-	if f.calls >= len(f.responses) {
+	if call >= len(f.responses) {
 		return "", errors.New("unexpected LLM call")
 	}
 
-	response := f.responses[f.calls]
-	f.calls++
-
-	return response, nil
+	return f.responses[call], nil
 }
 
 func newTestAgent(t *testing.T, llm LLM) *Agent {
@@ -96,7 +96,7 @@ func TestRun(t *testing.T) {
 		expectedErr := errors.New("llm unavailable")
 
 		llm := &fakeLLM{
-			err: expectedErr,
+			errors: []error{expectedErr},
 		}
 
 		agent := newTestAgent(t, llm)
@@ -108,41 +108,6 @@ func TestRun(t *testing.T) {
 
 		if !errors.Is(err, expectedErr) {
 			t.Fatalf("expected wrapped LLM error, got %v", err)
-		}
-	})
-
-	t.Run("returns error when action execution fails", func(t *testing.T) {
-		llm := &fakeLLM{
-			responses: []string{
-				"Create a program.",
-				`package main
-
-			import (
-				"fmt"
-				"os"
-			)
-
-			func main() {
-				fmt.Fprintln(os.Stderr, "execution failed")
-				os.Exit(42)
-			}`,
-			},
-		}
-
-		agent := newTestAgent(t, llm)
-
-		result, err := agent.Run(context.Background(), "Create a program that fails.")
-		if err == nil {
-			t.Fatal("expected error, got nil")
-		}
-		if result.Code == "" {
-			t.Fatal("expected generated code in result")
-		}
-		if result.Execution.ExitCode != 1 {
-			t.Fatalf("expected exit code 1, got %d", result.Execution.ExitCode)
-		}
-		if result.Execution.Stderr == "" {
-			t.Fatal("expected stderr feedback")
 		}
 	})
 
@@ -160,4 +125,56 @@ func TestRun(t *testing.T) {
 			t.Fatalf("expected no LLM calls, got %d", llm.calls)
 		}
 	})
+}
+
+func TestRunStopsAfterMaxAttempts(t *testing.T) {
+	llm := &fakeLLM{
+		responses: []string{
+			"Create a Go program.",
+			`package main
+
+import "os"
+
+func main() {
+	os.Exit(1)
+}`,
+			`package main
+
+import "os"
+
+func main() {
+	os.Exit(2)
+}`,
+			`package main
+
+import "os"
+
+func main() {
+	os.Exit(3)
+}`,
+		},
+	}
+
+	agent := newTestAgent(t, llm)
+
+	result, err := agent.Run(
+		context.Background(),
+		"Create a failing program.",
+	)
+
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	if result.Code == "" {
+		t.Fatal("expected generated code in result")
+	}
+
+	if result.Execution.ExitCode != 3 {
+		t.Fatalf("expected final exit code 3, got %d", result.Execution.ExitCode)
+	}
+
+	if llm.calls != 4 {
+		t.Fatalf("expected 4 LLM calls, got %d", llm.calls)
+	}
 }
