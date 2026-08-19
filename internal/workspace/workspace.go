@@ -134,3 +134,58 @@ func (w *Workspace) ResolvePath(path string) (string, error) {
 
 	return fullPath, nil
 }
+
+func CopyDir(source, destination string) error {
+	sourceInfo, err := os.Stat(source)
+	if err != nil {
+		return fmt.Errorf("failed to stat source directory: %w", err)
+	}
+
+	if !sourceInfo.IsDir() {
+		return fmt.Errorf("source is not a directory: %s", source)
+	}
+
+	if err := os.MkdirAll(destination, 0755); err != nil {
+		return fmt.Errorf("failed to create destination directory: %w", err)
+	}
+
+	return filepath.WalkDir(source, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relativePath, err := filepath.Rel(source, path)
+		if err != nil {
+			return fmt.Errorf("failed to get relative path: %w", err)
+		}
+
+		if relativePath == "." {
+			return nil
+		}
+
+		destinationPath := filepath.Join(destination, relativePath)
+
+		if entry.IsDir() {
+			if err := os.MkdirAll(destinationPath, 0755); err != nil {
+				return fmt.Errorf("failed to create directory %s: %w", destinationPath, err)
+			}
+
+			return nil
+		}
+
+		if !entry.Type().IsRegular() {
+			return nil
+		}
+
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("failed to read file %s: %w", path, err)
+		}
+
+		if err := os.WriteFile(destinationPath, content, 0600); err != nil {
+			return fmt.Errorf("failed to write file %s: %w", destinationPath, err)
+		}
+
+		return nil
+	})
+}

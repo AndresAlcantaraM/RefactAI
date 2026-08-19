@@ -246,3 +246,102 @@ func TestResolvePath(t *testing.T) {
 		}
 	})
 }
+
+func TestCopyDir(t *testing.T) {
+	source := t.TempDir()
+	destination := filepath.Join(t.TempDir(), "copy")
+
+	err := os.MkdirAll(filepath.Join(source, "internal"), 0755)
+	if err != nil {
+		t.Fatalf("failed to create source directory: %v", err)
+	}
+
+	files := map[string]string{
+		"main.go": `package main
+
+		func main() {
+			println("hello")
+		}
+		`,
+		"go.mod": `module example
+
+		go 1.23
+		`,
+		"internal/config.go": `package internal
+
+		const Name = "test"
+		`,
+	}
+
+	for path, content := range files {
+		fullPath := filepath.Join(source, filepath.FromSlash(path))
+
+		if err := os.WriteFile(fullPath, []byte(content), 0600); err != nil {
+			t.Fatalf("failed to create source file %s: %v", path, err)
+		}
+	}
+
+	if err := CopyDir(source, destination); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	for path, expected := range files {
+		fullPath := filepath.Join(destination, filepath.FromSlash(path))
+
+		content, err := os.ReadFile(fullPath)
+		if err != nil {
+			t.Fatalf("failed to read copied file %s: %v", path, err)
+		}
+
+		if string(content) != expected {
+			t.Fatalf(
+				"unexpected content for %s: expected %q, got %q",
+				path,
+				expected,
+				string(content),
+			)
+		}
+	}
+}
+
+func TestCopyDirEmptyDirectory(t *testing.T) {
+	source := t.TempDir()
+	destination := filepath.Join(t.TempDir(), "copy")
+
+	if err := CopyDir(source, destination); err != nil {
+		t.Fatalf("expected no error, got %v", err)
+	}
+
+	entries, err := os.ReadDir(destination)
+	if err != nil {
+		t.Fatalf("failed to read destination: %v", err)
+	}
+
+	if len(entries) != 0 {
+		t.Fatalf("expected empty destination, got %d entries", len(entries))
+	}
+}
+
+func TestCopyDirSourceDoesNotExist(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "does-not-exist")
+	destination := filepath.Join(t.TempDir(), "copy")
+
+	err := CopyDir(source, destination)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
+
+func TestCopyDirSourceIsFile(t *testing.T) {
+	source := filepath.Join(t.TempDir(), "file.txt")
+	destination := filepath.Join(t.TempDir(), "copy")
+
+	if err := os.WriteFile(source, []byte("hello"), 0600); err != nil {
+		t.Fatalf("failed to create source file: %v", err)
+	}
+
+	err := CopyDir(source, destination)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+}
