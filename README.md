@@ -118,7 +118,7 @@ Componentes principales (`internal/`):
 ## Instalación
 
 ```bash
-git clone <url-del-repositorio>
+git clone https://github.com/AndresAlcantaraM/RefactAI.git
 cd RefactAI
 go mod download
 ```
