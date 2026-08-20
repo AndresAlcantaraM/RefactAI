@@ -1,4 +1,4 @@
-module aprendizaje-gemini
+module refactai
 
 go 1.26.5
 
@@ -11,6 +11,7 @@ require (
 	github.com/google/s2a-go v0.1.8 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.4 // indirect
 	github.com/gorilla/websocket v1.5.3 // indirect
+	github.com/hexops/gotextdiff v1.0.3 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/traefik/yaegi v0.16.1 // indirect
 	go.opencensus.io v0.24.0 // indirect
