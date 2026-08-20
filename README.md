@@ -147,7 +147,8 @@ go run ./cmd/agent <project-path> "<task>"
 This repository includes a `demo/` folder containing a sample `user_service.go` file and a `go.mod` file. You can use this demo workspace to run the agent and observe its refactoring behavior in real time:
 
 ```bash
-go run .\cmd\agent\ .\demo\ "Refactor the code to address the analyzer findings while preserving existing behavior."
+go run ./cmd/agent ./demo "Refactor the code to address the analyzer findings while preserving existing behavior."
+```
 
 The CLI shows the generated plan, the Action's code, the execution/validation result and, if there are changes, the full diff before asking for confirmation:
 
