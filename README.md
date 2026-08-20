@@ -148,6 +148,7 @@ This repository includes a `demo/` folder containing a sample `user_service.go` 
 
 ```bash
 go run .\cmd\agent\ .\demo\ "Refactor the code to address the analyzer findings while preserving existing behavior."
+```
 
 The CLI shows the generated plan, the Action's code, the execution/validation result and, if there are changes, the full diff before asking for confirmation:
 
