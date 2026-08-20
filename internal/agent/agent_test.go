@@ -91,10 +91,16 @@ func TestRun(t *testing.T) {
 				"Create a simple Go program that prints a message.",
 				`package main
 
-			import "fmt"
+			import (
+				"fmt"
+				"os"
+			)
 
 			func main() {
 				fmt.Println("hello from agent")
+				if err := os.WriteFile("main.go", []byte("package main\n\nfunc main() {}\n// updated by agent\n"), 0644); err != nil {
+					panic(err)
+				}
 			}`,
 			},
 		}
@@ -181,7 +187,13 @@ func main() {
 }`,
 			`package main
 
-func main() {}`,
+import "os"
+
+func main() {
+	if err := os.WriteFile("main.go", []byte("package main\n\nfunc main() {}\n// fixed by agent\n"), 0644); err != nil {
+		panic(err)
+	}
+}`,
 		},
 	}
 
@@ -310,10 +322,16 @@ func TestRunUsesAnalyzerFindings(t *testing.T) {
 			"Refactor the tooLong function.",
 			`package main
 
-			import "fmt"
+			import (
+				"fmt"
+				"os"
+			)
 
 			func main() {
 				fmt.Println("refactored")
+				if err := os.WriteFile("main.go", []byte("package main\n\nfunc main() {\n\tprintln(\"hello\")\n}\n"), 0644); err != nil {
+					panic(err)
+				}
 			}`,
 		},
 	}

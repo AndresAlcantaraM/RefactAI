@@ -21,6 +21,6 @@ func Load() (*Config, error) {
 
 	return &Config{
 		GeminiApiKey: apiKey,
-		GeminiModel:  "gemini-2.5-flash",
+		GeminiModel:  "gemini-3.1-flash-lite",
 	}, nil
 }
