@@ -91,7 +91,7 @@ Main components (`internal/`):
 | `prompt`     | Builds the prompts (plan, code, corrective feedback).                              |
 | `llm`        | Client against Gemini.                                                             |
 | `action`     | Wrapper around the generated code (strips code fences, etc.).                      |
-| `executor`   | Writes, builds, fixes imports and runs the Action alongside `refactai_tools.go`.   |
+| `executor`   | Writes, builds, fix imports and runs the Action alongside `refactai_tools.go`.   |
 | `validator`  | Runs `go test ./...` on the workspace when a `go.mod` is present.                  |
 | `agent`      | Orchestrates the loop: plan → code → run → validate → retry (max 3).               |
 | `comparator` | Generates the diff and applies approved changes to the original project.           |
