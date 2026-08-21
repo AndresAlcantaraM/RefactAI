@@ -31,9 +31,9 @@ Given a Go project and a refactoring task in natural language, RefactAI:
 1. Analyzes the code with an **Analyzer** built on `go/ast` that detects structural issues (functions that are too long, functions with too many parameters).
 2. Uses those *findings* together with the user's task so an LLM (Gemini) can generate an **implementation plan**.
 3. Generates an **executable Go program** (an "Action") that applies that plan on an isolated copy of the project (the *workspace*).
-4. Builds and runs that Action, validates the result (`go test ./...` when applicable) and, if something fails, feeds the error back to the LLM so it can correct itself (up to 3 attempts).
-5. Compares the original project against the modified workspace and shows a **diff**.
-6. Only if the user **explicitly approves**, the changes are applied to the real project. If rejected, the temporary workspace is discarded and the original project stays untouched.
+4. Builds and runs that Action, automatically fixes imports (`goimports`), and validates the result (`go test ./...` when applicable). If something fails, the error is fed back to the LLM so it can correct itself (up to 3 attempts).
+5. Compares the original project against the modified workspace and shows a **diff**, file by file.
+6. The user **approves or rejects changes individually, per file**. Only approved files are applied to the real project; anything rejected is discarded and the original project stays untouched for that file.
 
 ---
 
@@ -55,6 +55,8 @@ func deleteFile(path string) error
 The *Code Builder* prompt receives the task, the plan, the Analyzer findings, the list of workspace files **and the contents of those files**, with explicit instructions to make minimal, targeted changes instead of rewriting whole files.
 
 This gives the agent the expressive power of real code (loops, conditionals, composing several changes into a single Action) while still being constrained to a small, auditable set of filesystem operations.
+
+After each Action runs successfully, RefactAI automatically fixes import statements across the modified workspace using `goimports` (`golang.org/x/tools/imports`), adding or removing imports as needed. This means the LLM never has to manage import blocks by hand.
 
 ---
 
@@ -82,19 +84,19 @@ Apply (only if approved)
 
 Main components (`internal/`):
 
-| Package      | Responsibility                                                          |
-|--------------|---------------------------------------------------------------------------|
-| `workspace`  | Isolated copy of the project; reads/writes are restricted to its root.   |
-| `analyzer`   | Detects findings (`function_too_long`, `too_many_parameters`) via AST.   |
-| `prompt`     | Builds the prompts (plan, code, corrective feedback).                    |
-| `llm`        | Client against Gemini.                                                   |
-| `action`     | Wrapper around the generated code (strips code fences, etc.).            |
-| `executor`   | Writes, builds and runs the Action alongside `refactai_tools.go`.        |
-| `validator`  | Runs `go test ./...` on the workspace when a `go.mod` is present.        |
-| `agent`      | Orchestrates the loop: plan → code → run → validate → retry (max 3).     |
-| `comparator` | Generates the diff and applies approved changes to the original project. |
-| `config`     | Loads configuration (API key, model) from environment variables.         |
-| `cmd/agent`  | CLI: entry point, user interaction, change approval.                     |
+| Package      | Responsibility                                                                     |
+|--------------|------------------------------------------------------------------------------------|
+| `workspace`  | Isolated copy of the project; reads/writes are restricted to its root.             |
+| `analyzer`   | Detects findings (`function_too_long`, `too_many_parameters`) via AST.             |
+| `prompt`     | Builds the prompts (plan, code, corrective feedback).                              |
+| `llm`        | Client against Gemini.                                                             |
+| `action`     | Wrapper around the generated code (strips code fences, etc.).                      |
+| `executor`   | Writes, builds, fix imports and runs the Action alongside `refactai_tools.go`.   |
+| `validator`  | Runs `go test ./...` on the workspace when a `go.mod` is present.                  |
+| `agent`      | Orchestrates the loop: plan → code → run → validate → retry (max 3).               |
+| `comparator` | Generates the diff and applies approved changes to the original project.           |
+| `config`     | Loads configuration (API key, model) from environment variables.                   |
+| `cmd/agent`  | CLI: entry point, user interaction, change approval.                               |
 
 ---
 
@@ -144,17 +146,21 @@ go run ./cmd/agent <project-path> "<task>"
 - `<project-path>`: path to the Go project you want to refactor.
 - `<task>`: natural language description of what you want to accomplish.
 
-This repository includes a `demo/` folder containing a sample `user_service.go` file and a `go.mod` file. You can use this demo workspace to run the agent and observe its refactoring behavior in real time:
+This repository includes a `demo/` folder with a small multi-package Go project, each deliberately containing findings the Analyzer can detect. You can use this demo workspace to run the agent and observe its refactoring behavior in real time:
 
 ```bash
 go run ./cmd/agent ./demo "Refactor the code to address the analyzer findings while preserving existing behavior."
 ```
 
-The CLI shows the generated plan, the Action's code, the execution/validation result and, if there are changes, the full diff before asking for confirmation:
+The CLI shows the generated plan, the Action's code, and the execution/validation result. If there are changes, it walks through them **one file at a time**, showing each file's diff and asking for approval individually:
 
 ```
-Apply these changes to the project? [y/N]:
+Approve changes in notification.go? (1/3) [y/N]:
+Approve changes in order_processor.go? (2/3) [y/N]:
+Approve changes in user_service.go? (3/3) [y/N]:
 ```
+
+Only the files you approve are written back to the original project; anything you reject is left untouched.
 
 ---
 
@@ -188,20 +194,23 @@ This is a **functional PoC (proof of concept)**, not a finished product. The ful
 - Flow safety: isolated workspace, restricted execution, validation, diff, human approval, apply/discard.
 - Minimal functional CLI: run, plan, result, diff, approval.
 - Deterministic, AST-based editing tool (`replaceFunction`), which replaced the initial text-reconstruction approach that was much more error-prone.
+- Automatic import management (`goimports`) after every Action run, so generated code never has to manage import blocks by hand.
+- Multi-package / multi-folder projects: the Analyzer, Executor, Validator and Comparator all operate on relative paths across the full directory tree, so nested packages work without extra handling.
+- Large files that exceed the LLM context limit are now flagged (both in the console and inside the prompt itself) instead of being silently omitted
 
 ---
 
 ## What's missing / next steps
 
-These are known improvements deliberately postponed so they don't block delivery of the PoC — they don't affect the main use case (single-package Go project):
+These are known improvements deliberately postponed so they don't block delivery of the PoC — they don't affect the main use case:
 
-- **Multiple packages in the same directory**: if the demo project mixes files from different `package` declarations in a flat folder, `go test ./...` fails with `found packages X and Y`. This isn't a bug in the agent itself but in how that test scenario is organized; it can be fixed by separating packages into subfolders or adjusting the validator so it doesn't assume a single package per directory.
 - **`replaceFunction` disambiguation** when two functions/methods share the same name (different receiver) within the same file.
 - **More structured findings**: today the affected function's name is embedded in `Finding.Message`; an explicit `Function string` field would be more robust.
 - Additional end-to-end integration tests, specifically for `replaceFunction`.
 - More robust handling of context cancellation and path edge cases.
 - Guaranteed workspace cleanup on unexpected failures.
-- Better CLI UX (error handling, more readable output).
+- **More descriptive, visually distinct CLI output**: retry attempts are currently logged as plain text; a friendlier, more scannable format (concise per-attempt status, clearer success/failure states) is planned but not yet implemented.
+- **Context window limits on very large files**: files exceeding the per-file size limit are now flagged with a warning and excluded from the LLM's context instead of being silently dropped, but the underlying limitation remains for very large projects overall. Splitting a refactor into multiple dependency-aware cycles is a possible future direction.
 - Observability/logging, external configuration, real sandboxing of Action execution.
 
 ---

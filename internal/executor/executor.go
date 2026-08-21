@@ -10,6 +10,9 @@ import (
 	"refactai/internal/action"
 	"refactai/internal/workspace"
 	"runtime"
+	"strings"
+
+	"golang.org/x/tools/imports"
 )
 
 const (
@@ -165,7 +168,16 @@ func (e *Executor) Run(ctx context.Context, act *action.Action) (Result, error) 
 	if err := e.build(ctx, binaryName); err != nil {
 		return Result{Stderr: err.Error(), ExitCode: -1}, fmt.Errorf("failed to build action: %w", err)
 	}
-	return e.execute(ctx, binaryPath)
+	result, err := e.execute(ctx, binaryPath)
+	if err != nil {
+		return result, err
+	}
+
+	if fixErr := e.fixImports(); fixErr != nil {
+		return result, fmt.Errorf("failed to fix imports after action execution: %w", fixErr)
+	}
+
+	return result, nil
 }
 
 func (e *Executor) build(ctx context.Context, binaryName string) error {
@@ -199,4 +211,41 @@ func (e *Executor) execute(ctx context.Context, binaryPath string) (Result, erro
 		result.ExitCode = -1
 	}
 	return result, fmt.Errorf("failed to execute action: %w", err)
+}
+
+func (e *Executor) fixImports() error {
+	files, err := e.workspace.ListFiles()
+	if err != nil {
+		return fmt.Errorf("failed to list workspace files: %w", err)
+	}
+
+	for _, file := range files {
+		if !strings.HasSuffix(file, ".go") {
+			continue
+		}
+		if file == actionFileName || file == toolsFileName {
+			continue
+		}
+
+		content, err := e.workspace.ReadFile(file)
+		if err != nil {
+			return fmt.Errorf("failed to read %s: %w", file, err)
+		}
+
+		fullPath := filepath.Join(e.workspace.Root(), file)
+		formatted, err := imports.Process(fullPath, content, nil)
+		if err != nil {
+			continue
+		}
+
+		if bytes.Equal(formatted, content) {
+			continue
+		}
+
+		if err := e.workspace.WriteFile(file, formatted); err != nil {
+			return fmt.Errorf("failed to write formatted %s: %w", file, err)
+		}
+	}
+
+	return nil
 }

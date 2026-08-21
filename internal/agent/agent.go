@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"log"
 	"path/filepath"
 	"refactai/internal/action"
 	"refactai/internal/analyzer"
@@ -157,6 +158,14 @@ func (a *Agent) readWorkspaceContext(files []string) (map[string]string, error) 
 		}
 
 		if len(content) > maxContextFileSize {
+			log.Printf(
+				"WARNING: %s is %d bytes, exceeds the %d byte context limit; its content will be omitted from the LLM prompt",
+				file, len(content), maxContextFileSize,
+			)
+			contents[file] = fmt.Sprintf(
+				"[FILE TOO LARGE TO INCLUDE: %d bytes, exceeds the %d byte limit. Content omitted — do not assume you know this file's contents; avoid modifying it unless strictly necessary.]",
+				len(content), maxContextFileSize,
+			)
 			continue
 		}
 
