@@ -121,28 +121,37 @@ func main() {
 	}
 
 	log.Printf("CHANGES DETECTED (%d file(s)):\n", len(changes))
-	for _, change := range changes {
+
+	var approved []comparator.Change
+
+	for i, change := range changes {
 		fmt.Printf("\n--- [%s] File: %s ---\n", change.Type, change.Path)
 		fmt.Println(change.Diff)
-	}
 
-	fmt.Print("\nApply these changes to the project? [y/N]: ")
+		fmt.Printf("\nApprove changes in %s? (%d/%d) [y/N]: ", change.Path, i+1, len(changes))
+		var answer string
+		fmt.Scanln(&answer)
 
-	var answer string
-	fmt.Scanln(&answer)
-
-	if strings.EqualFold(answer, "y") ||
-		strings.EqualFold(answer, "yes") {
-		if err := comparatorClient.Apply(
-			projectPath,
-			ws.Root(),
-			changes,
-		); err != nil {
-			log.Fatalf("failed to apply changes: %v", err)
+		if strings.EqualFold(answer, "y") || strings.EqualFold(answer, "yes") {
+			approved = append(approved, change)
+			log.Printf("Changes in %s approved.\n", change.Path)
+			continue
 		}
-
-		log.Println("Changes applied successfully.")
-	} else {
-		log.Println("Changes discarded.")
+		log.Printf("Changes in %s rejected.\n", change.Path)
 	}
+
+	if len(approved) == 0 {
+		log.Println("No changes were approved. No files were modified.")
+		return
+	}
+
+	if err := comparatorClient.Apply(
+		projectPath,
+		ws.Root(),
+		approved,
+	); err != nil {
+		log.Fatalf("failed to apply changes: %v", err)
+	}
+
+	log.Printf("%d/%d change(s) applied successfully.\n", len(approved), len(changes))
 }
